@@ -1,7 +1,6 @@
 /**
  * Dependencies
  */
-const JWKSchema = require('./JWKSchema')
 const {JSONSchema} = require('@trust/json-document')
 
 /**

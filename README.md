@@ -2,6 +2,7 @@
 
 [![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg?style=flat-square)](https://github.com/RichardLitt/standard-readme)
 [![Build Status](https://travis-ci.org/anvilresearch/jwt.svg?branch=master)](https://travis-ci.org/anvilresearch/jwt)
+[![codecov](https://codecov.io/gh/anvilresearch/jwt/branch/master/graph/badge.svg)](https://codecov.io/gh/anvilresearch/jwt)
 
 > JSON Web Token for JavaScript
 

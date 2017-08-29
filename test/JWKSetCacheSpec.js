@@ -24,8 +24,8 @@ const expect = chai.expect
  */
 const JWKSetCache = require('../src/JWKSetCache')
 const { JWKSet, JWK } = require('@trust/jwk')
-//const PouchDB = require('pouchdb')
-//PouchDB.plugin(require('pouchdb-adapter-memory'))
+const PouchDB = require('pouchdb')
+PouchDB.plugin(require('pouchdb-adapter-memory'))
 
 /**
  * Tests
@@ -42,56 +42,59 @@ describe('JWKSetCache', () => {
    * constructor
    */
   describe('constructor', () => {
-    let lru
+    let cache, store
 
     beforeEach(() => {
-      lru = new JWKSetCache()
+      cache = new JWKSetCache()
     })
 
-    it('should initialize cache', () => {
-      lru.cache.should.be.instanceOf(Map)
+    it('should initialize jwkSets', () => {
+      cache.jwkSets.should.eql({})
     })
 
-    it('should initialize default store', () => {
-      lru.store.should.be.instanceOf(PouchDB)
+    it('should intialize recent', () => {
+      cache.recent.should.eql([])
+    })
+
+    it('should initialize default store value', () => {
+      expect(cache.store).to.equal(null)
     })
 
     it('should initialize default max', () => {
-      lru.max.should.equal(25)
+      cache.max.should.equal(100)
     })
 
     it('should initialize store from options', () => {
-      lru = new JWKSetCache({ store: new PouchDB('fake', { adapter: 'memory' }) })
-      lru.store.name.should.equal('fake')
+      store = {}
+      cache = new JWKSetCache({ store })
+      cache.store.should.equal(store)
     })
 
     it('should initialize max from options', () => {
-      lru = new JWKSetCache({ max: 100 })
-      lru.max.should.equal(100)
+      cache = new JWKSetCache({ max: 100 })
+      cache.max.should.equal(100)
     })
   })
 
+  /**
+   * getJwk
+   */
   describe('getJwk', () => {
-    let lru, store, jku
+    let cache, store, jku
 
     beforeEach(() => {
-      store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache()
       jku = 'https://example.com/jwks'
-
-      return store.post(Object.assign({ _id: jku }, jwks))
-    })
-
-    afterEach(() => {
-      return store.destroy()
     })
 
     it('should reject with invalid kid', () => {
       let intercept = nock('https://example.com')
         .get('/jwks')
         .reply(200, jwks)
+        .get('/jwks')
+        .reply(200, jwks)
 
-      return lru.getJwk(jwks, jku, 'unknown')
+      return cache.getJwk(jwks, jku, 'unknown')
         .should.be.rejectedWith('JWK not found in JWK Set')
     })
 
@@ -100,29 +103,24 @@ describe('JWKSetCache', () => {
         .get('/unknown')
         .reply(404, 'Not found')
 
-      return lru.getJwk(jwks, 'https://example.com/unknown', 'oughtabeok')
+      return cache.getJwk(jwks, 'https://example.com/unknown', 'oughtabeok')
         .should.be.rejectedWith('JWK Set not found')
     })
   })
 
   describe('getJwks', () => {
-    let lru, store, jku
+    let cache, store, jku
 
     beforeEach(() => {
-      store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache()
       jku = 'https://example.com/jwks'
 
-      //lru.cache.set(jku, jwks)
-      return store.post(Object.assign({ _id: jku }, jwks))
-    })
-
-    afterEach(() => {
-      return store.destroy()
+      cache.jwkSets[jku] = jwks
+      cache.recent = [jku]
     })
 
     it('should resolve a JWKSet', () => {
-      return lru.getJwks(jku)
+      return cache.getJwks(jku)
         .should.eventually.be.instanceOf(JWKSet)
     })
 
@@ -131,7 +129,7 @@ describe('JWKSetCache', () => {
         .get('/unknown')
         .reply(404, 'Not found')
 
-      return lru.getJwks('https://example.com/unknown')
+      return cache.getJwks('https://example.com/unknown')
         .should.be.rejectedWith('JWK Set not found')
     })
   })
@@ -140,30 +138,33 @@ describe('JWKSetCache', () => {
    * getJwksFromCache
    */
   describe('getJwksFromCache', () => {
-    let lru
+    let cache, jku
 
     before(() => {
-      lru = new JWKSetCache()
-      lru.cache.set('https://example.com/jwks', jwks)
+      cache = new JWKSetCache()
+      jku = 'https://example.com/jwks'
+
+      cache.jwkSets[jku] = jwks
+      cache.recent = [jku]
     })
 
     it('should resolve cached JWK Set', () => {
-      return lru.getJwksFromCache('https://example.com/jwks')
+      return cache.getJwksFromCache(jku)
         .should.eventually.equal(jwks)
     })
 
     it('should resolve null if uncached', () => {
-      return lru.getJwksFromCache('https://unknown.com/jwks')
+      return cache.getJwksFromCache('https://unknown.com/jwks')
         .should.eventually.equal(null)
     })
   })
 
   describe('getJwksFromStore', () => {
-    let lru, store, jku
+    let cache, store, jku
 
     beforeEach(() => {
       store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache({ store })
       jku = 'https://example.com/jwks'
 
       return store.post(Object.assign({ _id: jku }, jwks))
@@ -174,12 +175,12 @@ describe('JWKSetCache', () => {
     })
 
     it('should resolve with provided JWK Set', () => {
-      return lru.getJwksFromStore(jwks, jku)
+      return cache.getJwksFromStore(jwks, jku)
         .should.eventually.equal(jwks)
     })
 
     it('should import JWK Set from data store', () => {
-      return lru.getJwksFromStore(null, jku)
+      return cache.getJwksFromStore(null, jku)
         .then(imported => {
           imported.should.be.instanceOf(JWKSet)
           expect(typeof imported['_id']).to.equal('string')
@@ -189,17 +190,17 @@ describe('JWKSetCache', () => {
     })
 
     it('should resolve null if JWK Set is not found', () => {
-      return lru.getJwksFromStore(null, 'https://unknown.com/jwks')
+      return cache.getJwksFromStore(null, 'https://unknown.com/jwks')
         .should.eventually.equal(null)
     })
   })
 
   describe('getJwksFromNetwork', () => {
-    let lru, store, jku
+    let cache, store, jku
 
     beforeEach(() => {
       store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache({ store })
       jku = 'https://example.com/jwks'
     })
 
@@ -208,7 +209,7 @@ describe('JWKSetCache', () => {
     })
 
     it('should resolve with provided JWK Set', () => {
-      return lru.getJwksFromNetwork(jwks, jku)
+      return cache.getJwksFromNetwork(jwks, jku)
         .should.eventually.equal(jwks)
     })
 
@@ -217,7 +218,7 @@ describe('JWKSetCache', () => {
         .get('/jwks')
         .reply(200, jwks)
 
-      return lru.getJwksFromNetwork(null, jku)
+      return cache.getJwksFromNetwork(null, jku)
         .should.eventually.eql(jwks)
     })
 
@@ -226,7 +227,7 @@ describe('JWKSetCache', () => {
         .get('/jwks')
         .reply(200, jwks)
 
-      return lru.getJwksFromNetwork(null, jku)
+      return cache.getJwksFromNetwork(null, jku)
         .then(jwks => store.get(jku))
         .then(data => data.keys.should.eql(jwks.keys))
     })
@@ -236,7 +237,7 @@ describe('JWKSetCache', () => {
         .get('/jwks')
         .reply(200, jwks)
 
-      return lru.getJwksFromNetwork(null, jku)
+      return cache.getJwksFromNetwork(null, jku)
         .then(jwks => jwks.should.be.instanceOf(JWKSet))
     })
 
@@ -245,7 +246,7 @@ describe('JWKSetCache', () => {
         .get('/jwks')
         .reply(404, 'Not found')
 
-      return lru.getJwksFromNetwork(null, jku)
+      return cache.getJwksFromNetwork(null, jku)
         .should.eventually.equal(null)
     })
   })
@@ -254,29 +255,59 @@ describe('JWKSetCache', () => {
    * cacheJwks
    */
   describe('cacheJwks', () => {
-    let lru, store, jku
+    let cache, store, jku
 
     beforeEach(() => {
-      store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache()
       jku = 'https://example.com/jwks'
     })
 
-    afterEach(() => {
-      return store.destroy()
-    })
-
     it('should reject without jwks', () => {
-      return lru.cacheJwks(null, jku)
+      return cache.cacheJwks(null, jku)
         .should.be.rejectedWith('JWK Set not found')
     })
 
-    it('should set new value to most recently used')
-    it('should set existing value to most recently used')
-    it('should remove least recently used items greater than maximum')
+    it('should set new value to most recently used', () => {
+      cache.recent = ['https://other.com/jwks']
+      return cache.cacheJwks(jwks, jku)
+        .then(jwks => {
+          cache.jwkSets[jku].should.equal(jwks)
+          cache.recent[0].should.equal(jku)
+        })
+    })
+
+    it('should set existing value to most recently used', () => {
+      cache.recent = ['https://other.com/jwks', jku]
+      return cache.cacheJwks(jwks, jku)
+        .then(jwks => {
+          cache.jwkSets[jku].should.equal(jwks)
+          cache.recent[0].should.equal(jku)
+        })
+    })
+
+    it('should remove least recently used items greater than maximum', () => {
+      cache.max = 2
+
+      cache.jwkSets = {
+        'https://other.com/jwks': {},
+        'https://delete.me/jwks': {}
+      }
+
+      cache.recent = [
+        'https://other.com/jwks',
+        'https://delete.me/jwks'
+      ]
+
+      return cache.cacheJwks(jwks, jku)
+        .then(jwks => {
+          cache.recent.includes(0).should.equal(false)
+          expect(cache.jwkSets['https://delete.me/jwks'])
+            .to.equal(undefined)
+        })
+    })
 
     it('should eventually resolve a JWKSet', () => {
-      return lru.cacheJwks(jwks, jku)
+      return cache.cacheJwks(jwks, jku)
         .should.eventually.equal(jwks)
     })
   })
@@ -285,11 +316,11 @@ describe('JWKSetCache', () => {
    * getJwkFromJwks
    */
   describe('getJwkFromJwks', () => {
-    let lru, store, jku, jwk
+    let cache, store, jku, jwk
 
     beforeEach(() => {
       store = new PouchDB('jwks', { adapter: 'memory' })
-      lru = new JWKSetCache({ store })
+      cache = new JWKSetCache({ store })
       jku = 'https://example.com/jwks'
       jwk = jwks.find({ key_ops: { $in: ['verify'] } })
 
@@ -301,7 +332,7 @@ describe('JWKSetCache', () => {
     })
 
     it('should resolve JWK', () => {
-      return lru.getJwkFromJwks(jwks, jku, jwk.kid)
+      return cache.getJwkFromJwks(jwks, jku, jwk.kid)
         .should.eventually.equal(jwk)
     })
 
@@ -312,7 +343,7 @@ describe('JWKSetCache', () => {
         .get('/jwks')
         .reply(200, jwks)
 
-      return lru.getJwkFromJwks(jwks, jku, 'unknown')
+      return cache.getJwkFromJwks(jwks, jku, 'unknown')
         .should.be.rejectedWith('JWK not found in JWK Set')
     })
   })

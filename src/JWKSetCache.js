@@ -149,6 +149,8 @@ class JWKSetCache {
               throw err
             })
         }
+
+        return jwks
       })
       .catch(err => {
         // we don't care downstream *why* it couldn't be fetched?

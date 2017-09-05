@@ -30,7 +30,7 @@ const JWKSetCache = require('../src/JWKSetCache')
  * Tests
  * @ignore
  */
-describe.only('JOSESignature', () => {
+describe('JOSESignature', () => {
 
   /**
    * constructor

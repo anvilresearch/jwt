@@ -619,16 +619,24 @@ class JWT extends JSONDocument {
    */
   static verify (...data) {
     let params = Object.assign({}, ...data)
-    let { serialized } = params
+    let { serialized, cache } = params
 
     if (!serialized) {
       throw new Error('JWT input required')
+    }
+
+    if (!cache) {
+      throw new Error('cache required')
     }
 
     // Try decode
     let instance
     try {
       instance = this.from(serialized)
+      instance.signatures = instance.signatures.map(signature => {
+        let data = Object.assign({}, signature, { cache })
+        return new JOSESignature(data)
+      })
     } catch (e) {
       return Promise.reject(e)
     }
@@ -759,53 +767,6 @@ class JWT extends JSONDocument {
   }
 
   /**
-   * resolveKeys
-   *
-   * @todo  This needs to be updated for use with the new API
-   */
-  // resolveKeys (jwks) {
-  //   let kid = this.header.kid
-
-  //   let keys, match
-
-  //   // treat an array as the "keys" property of a JWK Set
-  //   if (Array.isArray(jwks)) {
-  //     keys = jwks
-  //   }
-
-  //   // presence of keys indicates object is a JWK Set
-  //   if (jwks.keys) {
-  //     keys = jwks.keys
-  //   }
-
-  //   // wrap a plain object they is not a JWK Set in Array
-  //   if (!jwks.keys && typeof jwks === 'object') {
-  //     keys = [jwks]
-  //   }
-
-  //   // ensure there are keys to search
-  //   if (!keys) {
-  //     throw new DataError('Invalid JWK argument')
-  //   }
-
-  //   // match by "kid" or "use" header
-  //   if (kid) {
-  //     match = keys.find(jwk => jwk.kid === kid)
-  //   } else {
-  //     match = keys.find(jwk => jwk.use === 'sig')
-  //   }
-
-  //   // assign matching key to JWT and return a boolean
-  //   if (match) {
-  //     console.log(match)
-  //     this.key = match.cryptoKey
-  //     return true
-  //   } else {
-  //     return false
-  //   }
-  // }
-
-  /**
    * encode
    *
    * @description
@@ -888,8 +849,8 @@ class JWT extends JSONDocument {
    */
   verify (...data) {
     let params = Object.assign({}, ...data)
-    let { signatures, payload, serialization } = this
-    let { validate, result, cryptoKey, cryptoKeys } = params
+    let { signatures, payload } = this
+    let { validate, result, jwk } = params
 
     // Validate instance
     if (validate) {
@@ -900,78 +861,27 @@ class JWT extends JSONDocument {
       }
     }
 
-    // Encode payload
-    let encodedPayload = base64url(JSON.stringify(payload))
+    // Verify
+    return Promise.all(signatures.map(signature => signature.verify(payload, jwk)))
 
-    // Verify all signatures with a key present
-    let promises = signatures.map((descriptor, index) => {
+      // Ensure all signatures verified
+      .then(verified => {
+        verified = verified.reduce((prev, val) => prev ? val : false, true)
 
-      let key
-      // Get manually mapped key
-      if (descriptor.cryptoKey) {
-        key = descriptor.cryptoKey
-
-      // Get corresponding key
-      } else if (cryptoKeys
-        && Array.isArray(cryptoKeys)
-        && index < cryptoKeys.length
-        && cryptoKeys[index]) {
-
-        key = cryptoKeys[index]
-
-      // Attempt to use the single key
-      } else if (cryptoKey) {
-        key = cryptoKey
-
-      // No key to verify signature; ignore
-      } else {
-        return Promise.resolve(true)
-      }
-
-      let {
-        protected: protectedHeader,
-        header: unprotectedHeader,
-        signature
-      } = descriptor
-
-      // no signature to verify
-      if (!signature) {
-        return Promise.reject(new DataError('Missing signature(s)'))
-      }
-
-      let { alg } = protectedHeader
-
-      // Encode header and assemble signature verification data
-      let encodedHeader = base64url(JSON.stringify(protectedHeader))
-      let data = `${encodedHeader}.${encodedPayload}`
-
-      // Verify signature and store result on the descriptor
-      return JWA.verify(alg, key, signature, data).then(verified => {
-        Object.defineProperty(signatures[index], 'verified', {
+        // Assign verification result
+        Object.defineProperty(this, 'verified', {
           value: verified,
           enumerable: false,
           configurable: true
         })
-        return verified
+
+        // Resolve requested result
+        if (!result || result === 'boolean') {
+          return verified
+        } else if (result === 'object' || result === 'instance') {
+          return this
+        }
       })
-    })
-
-    // Await verification results
-    return Promise.all(promises).then(verified => {
-      verified = verified.reduce((prev, val) => prev ? val : false, true)
-
-      Object.defineProperty(this, 'verified', {
-        value: verified,
-        enumerable: false,
-        configurable: true
-      })
-
-      if (!result || result === 'boolean') {
-        return verified
-      } else if (result === 'object' || result === 'instance') {
-        return this
-      }
-    })
   }
 
   /**

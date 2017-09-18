@@ -91,7 +91,6 @@ class JOSESignature {
       cache,
       jwk
     } = options
-    console.log('OPTIONS', options)
 
     if (!payload) {
       return Promise.reject(

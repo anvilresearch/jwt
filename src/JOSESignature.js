@@ -14,7 +14,7 @@ class JOSESignature {
    * constructor
    */
   constructor (data = {}) {
-    let { protectedHeader, unprotectedHeader, signature, cache } = data
+    let { protected: protectedHeader, header: unprotectedHeader, signature, cache } = data
 
     // copy properties to instance
     //
@@ -50,9 +50,9 @@ class JOSESignature {
     // TODO (cs):
     // There has to be a less janky way to ensure the unprotected header
     // is not added with undefined
-    if (this.hasOwnProperty('unprotectedHeader') &&
-        this['unprotectedHeader'] === undefined) {
-      delete this['unprotectedHeader']
+    if (this.hasOwnProperty('header') &&
+        this['header'] === undefined) {
+      delete this['header']
     }
 
     // define cache as nonenumerable
@@ -65,6 +65,7 @@ class JOSESignature {
 
     // make the object immutable
     Object.freeze(this)
+    Object.freeze(this['protected'])
   }
 
   /**
@@ -75,14 +76,23 @@ class JOSESignature {
    *
    * @param {Object} options
    * @param {Object} options.payload
-   * @param {Object} options.unprotectedHeader
+   * @param {Object} options.header: unprotectedHeader
    * @param {Object} options.params
    * @param {LRU} options.cache
    * @param {JWK} options.jwk
    *
    * @returns {Promise<JOSESignature>}
    */
-  static sign ({payload, unprotectedHeader, protectedHeaderParams, cache, jwk}) {
+  static sign (options) {
+    let {
+      payload,
+      header: unprotectedHeader,
+      protected: protectedHeaderParams,
+      cache,
+      jwk
+    } = options
+    console.log('OPTIONS', options)
+
     if (!payload) {
       return Promise.reject(
         new Error('Missing payload for JOSE Signature')
@@ -95,8 +105,6 @@ class JOSESignature {
       )
     }
 
-    // TODO (cs)
-    // ensure we have a suitable JWK instance, not just a value
     if (!jwk) {
       return Promise.reject(
         new Error('JOSE Signature requires JWK')
@@ -110,8 +118,8 @@ class JOSESignature {
 
     return jwk.sign(input)
       .then(signature => new JOSESignature({
-        unprotectedHeader,
-        protectedHeader,
+        header: unprotectedHeader,
+        protected: protectedHeader,
         signature,
         cache
       }))
@@ -130,7 +138,7 @@ class JOSESignature {
    * @returns {Promise<Boolean>}
    */
   verify (payload, keyHint) {
-    let { protectedHeader, signature, cache } = this
+    let { protected: protectedHeader, signature, cache } = this
     let { alg, kid, jku, jwc } = protectedHeader
 
     // Validate presence of "alg"

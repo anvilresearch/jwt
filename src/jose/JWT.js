@@ -4,9 +4,11 @@
  * Dependencies
  */
 const base64url = require('base64url')
-const {JSONDocument} = require('@trust/json-document')
+const { JSONDocument } = require('@trust/json-document')
 const JWTSchema = require('../schemas/JWTSchema')
+const JOSESignature = require('../JOSESignature')
 const { JWA } = require('@trust/jwa')
+const { JWK } = require('@trust/jwk')
 const DataError = require('../errors/DataError')
 const KeyManagement = require('../KeyManagement')
 
@@ -575,7 +577,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.sign(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.sign(params))
   }
 
   /**
@@ -600,7 +603,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.encode(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.encode(params))
   }
 
 
@@ -629,7 +633,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.verify(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.verify(params))
   }
 
   /**
@@ -652,7 +657,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.encrypt(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.encrypt(params))
   }
 
   /**
@@ -680,7 +686,62 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.decrypt(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.decrypt(params))
+  }
+
+  /**
+   * normalizeKeyParams
+   *
+   * @description
+   * Normalize key material. Accepts a single input only.
+   *
+   * @param  {Object} params - Operation params (as per sign, verify, etc.)
+   * @param  {(Object|String)} params.jwk
+   * @param  {String} params.pem
+   * @param  {Object} params.cryptoKey
+   * @return {Promise<Object>} - params object with normalized JWK instance
+   */
+  static normalizeKeyParams (params) {
+    let { jwk, pem, cryptoKey, protected: protectedHeader } = params
+    let alg
+
+    // Get `alg` from elsewhere
+    if (protectedHeader) {
+      alg = protectedHeader.alg
+    } else {
+      alg = params.alg
+    }
+
+    // Handle JWK
+    if (jwk) {
+
+      // Handle instance
+      if (jwk instanceof JWK) {
+        return Promise.resolve(params)
+      }
+
+      // Handle JWK Object or JSON String
+      return JWK.importKey(jwk, { alg }).then(instance => {
+        params.jwk = instance
+        return params
+      })
+    }
+
+    // Handle PEM
+    if (pem) {
+      // TODO
+    }
+
+    // Handle CryptoKey
+    if (cryptoKey) {
+      return JWK.fromCryptoKey(cryptoKey, { alg }).then(instance => {
+        params.jwk = instance
+        return params
+      })
+    }
+
+    return Promise.resolve(params)
   }
 
   /**
@@ -769,27 +830,15 @@ class JWT extends JSONDocument {
    * @description
    * Sign a JWT instance
    *
-   * @todo import different types of key
-   *
    * @param {...Object} data
    * @returns {Promise<SerializedToken>}
    */
   sign (...data) {
     let params = Object.assign({}, ...data)
-
     let { payload } = this
+    let { serialization, validate = true, result } = params
 
-    let {
-      protected: protectedHeader,
-      header: unprotectedHeader,
-      signature,
-      signatures,
-      serialization,
-      cryptoKey,
-      validate = true,
-      result
-    } = params
-
+    // Schema validation
     if (validate) {
       let validation = this.validate()
 
@@ -807,69 +856,17 @@ class JWT extends JSONDocument {
       })
     }
 
-    // Normalize new flat signature
-    if (cryptoKey && !signature && (unprotectedHeader || protectedHeader)) {
-      let descriptor = {}
+    // Create signature
+    return JOSESignature.sign(params).then(signature => {
 
-      if (!protectedHeader && unprotectedHeader) {
-        descriptor.protected = unprotectedHeader
+      // Assign signature
+      if (Array.isArray(this.signatures)) {
+        this.signatures.push(signature)
       } else {
-        descriptor.protected = protectedHeader
-        descriptor.header = unprotectedHeader
+        this.signatures = [signature]
       }
 
-      descriptor.cryptoKey = cryptoKey
-
-      // Add to signatures array
-      if (signatures && Array.isArray(signatures)) {
-        signatures.push(descriptor)
-      } else {
-        signatures = [descriptor]
-      }
-    }
-
-    // Create signatures
-    let promises = []
-    if (signatures && Array.isArray(signatures)) {
-      // Ignore ambiguous/invalid descriptors
-      promises = signatures.filter(descriptor => {
-        return descriptor.cryptoKey && !descriptor.signature
-
-      // assemble and sign
-      }).map(descriptor => {
-        let {
-          protected: protectedHeader,
-          header: unprotectedHeader,
-          signature,
-          cryptoKey
-        } = descriptor
-        let { alg } = protectedHeader
-
-        // Encode signature content
-        let encodedHeader = base64url(JSON.stringify(protectedHeader))
-        let encodedPayload = base64url(JSON.stringify(payload))
-        let data = `${encodedHeader}.${encodedPayload}`
-
-        return JWA.sign(alg, cryptoKey, data).then(signature => {
-          return {
-            protected: protectedHeader,
-            header: unprotectedHeader,
-            signature
-          }
-        })
-      })
-    }
-
-    // Await signatures
-    return Promise.all(promises).then(signatures => {
-      if (signatures.length > 0) {
-        if (this.signatures && Array.isArray(this.signatures)) {
-          this.signatures = this.signatures.concat(signatures)
-        } else {
-          this.signatures = signatures
-        }
-      }
-
+      // Resolve requested result
       if (!result || result === 'string') {
         return this.serialize()
       } else if (result === 'object' || result === 'instance') {

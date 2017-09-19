@@ -43,8 +43,8 @@ describe('JOSESignature', () => {
       signature = 'fake'
       joseSignature = new JOSESignature({
         foo: 'bar',
-        unprotectedHeader: { anything: 'goes' },
-        protectedHeader: { alg: 'RS256' },
+        header: { anything: 'goes' },
+        protected: { alg: 'RS256' },
         signature,
         cache
       })
@@ -52,14 +52,14 @@ describe('JOSESignature', () => {
 
     it('should ignore properties it does not understand', () => {
       joseSignature.foo.should.equal('bar')
-      joseSignature.unprotectedHeader.anything.should.equal('goes')
+      joseSignature.header.anything.should.equal('goes')
     })
 
     it('should require integrity protected header', () => {
       expect(() => {
         new JOSESignature({
           foo: 'bar',
-          unprotectedHeader: { anything: 'goes' },
+          header: { anything: 'goes' },
           signature,
           cache
         })
@@ -68,21 +68,21 @@ describe('JOSESignature', () => {
 
     it('should not define empty unprotected header', () => {
       joseSignature = new JOSESignature({
-        unprotectedHeader: undefined,
-        protectedHeader: { alg: 'RS256' },
+        header: undefined,
+        protected: { alg: 'RS256' },
         signature,
         cache
       })
 
-      joseSignature.should.not.have.property('unprotectedHeader')
+      joseSignature.should.not.have.property('header')
     })
 
     it('should require signature', () => {
       expect(() => {
         new JOSESignature({
           foo: 'bar',
-          unprotectedHeader: { anything: 'goes' },
-          protectedHeader: { alg: 'RS256' },
+          header: { anything: 'goes' },
+          protected: { alg: 'RS256' },
           cache
         })
       }).to.throw('JOSESignature must define signature')
@@ -91,7 +91,7 @@ describe('JOSESignature', () => {
     it('should require absence of signature with unsecured JWS', () => {
       expect(() => {
         new JOSESignature({
-          protectedHeader: { alg: 'none' },
+          protected: { alg: 'none' },
           signature: 'nope'
         })
       }).to.throw('Unsecured JWS must not include signature')
@@ -101,8 +101,8 @@ describe('JOSESignature', () => {
       expect(() => {
         new JOSESignature({
           foo: 'bar',
-          unprotectedHeader: { anything: 'goes' },
-          protectedHeader: { alg: 'RS256' },
+          header: { anything: 'goes' },
+          protected: { alg: 'RS256' },
           signature
         })
       }).to.throw('JOSESignature requires cache')
@@ -111,7 +111,7 @@ describe('JOSESignature', () => {
     it('should not require JWK Set cache with unsecured JWS', () => {
       expect(() => {
         new JOSESignature({
-          protectedHeader: { alg: 'none' }
+          protected: { alg: 'none' }
         })
       }).to.not.throw()
     })
@@ -122,11 +122,11 @@ describe('JOSESignature', () => {
 
     it('should not include falsy unprotected header', () => {
       joseSignature = new JOSESignature({
-        unprotectedHeader: undefined,
-        protectedHeader: { alg: 'none' }
+        header: undefined,
+        protected: { alg: 'none' }
       })
 
-      expect(joseSignature).to.not.have.property('unprotectedHeader')
+      expect(joseSignature).to.not.have.property('header')
     })
 
     it('should freeze the instance', () => {
@@ -164,7 +164,7 @@ describe('JOSESignature', () => {
     it('should resolve JOSESignature instance', () => {
       return JOSESignature.sign({
         payload: {},
-        protectedHeaderParams: {
+        protected: {
           kid: jwk.kid,
           jku: 'https://example.com/jwks'
         },
@@ -189,7 +189,7 @@ describe('JOSESignature', () => {
 
         return JOSESignature.sign({
           payload,
-          protectedHeaderParams: {
+          protected: {
             kid: jwk.kid,
             jku: 'https://example.com/jwks'
           },
@@ -200,16 +200,9 @@ describe('JOSESignature', () => {
       })
     })
 
-    it('should reject with missing "alg" header parameter', () => {
-      delete joseSignature.protectedHeader.alg
-      return joseSignature.verify({ payload })
-        .should.be.rejectedWith('Missing "alg" in protected header')
-    })
-
-
     it('should resolve "true" with valid unsecured JWS', () => {
       joseSignature = new JOSESignature({
-        protectedHeader: { alg: 'none' }
+        protected: { alg: 'none' }
       })
 
       return joseSignature.verify(payload)

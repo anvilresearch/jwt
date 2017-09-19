@@ -7,6 +7,7 @@ const base64url = require('base64url')
 const { JSONDocument } = require('@trust/json-document')
 const JWTSchema = require('../schemas/JWTSchema')
 const JOSESignature = require('../JOSESignature')
+const JWKSetCache = require('../JWKSetCache')
 const { JWA } = require('@trust/jwa')
 const { JWK } = require('@trust/jwk')
 const DataError = require('../errors/DataError')
@@ -58,6 +59,42 @@ class JWT extends JSONDocument {
    */
   static get schema () {
     return JWTSchema
+  }
+
+  /**
+   * cache
+   */
+  static get cache () {
+    let { keyCache: cache } = this
+
+    if (!cache) {
+      cache = new JWKSetCache()
+      Object.defineProperty(this, 'keyCache', {
+        value: cache,
+        configurable: true,
+        enumerable: false
+      })
+    }
+
+    return cache
+  }
+
+  /**
+   * setCache
+   *
+   * @description
+   * Create and assign a new JWKSetCache to use across all JWT instances.
+   *
+   * @param {Object} [options = {}]
+   */
+  static setCache (options = {}) {
+    let cache = new JWKSetCache(options)
+
+    Object.defineProperty(this, 'keyCache', {
+      value: cache,
+      configurable: true,
+      enumerable: false
+    })
   }
 
   /**
@@ -566,8 +603,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<SerializedToken>}
    */
   static sign (...data) {
-    // Shallow merge data
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -592,8 +628,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<SerializedToken>}
    */
   static encode (...data) {
-    // Shallow merge data
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -614,11 +649,18 @@ class JWT extends JSONDocument {
    * @description
    * Decode and verify a JSON Web Token
    *
-   * @param {...Object} data
-   * @returns {Promise<JWT>}
+   * @param {(Object|String)} data
+   * @param {...Object} options
+   * @returns {Promise<(JWT|Boolean)>}
    */
-  static verify (...data) {
-    let params = Object.assign({}, ...data)
+  static verify (data, ...options) {
+    if (typeof data === 'string') {
+      data = { serialized: data }
+    } else if (typeof data !== 'object') {
+      throw new Error('JWT input must be string or object')
+    }
+
+    let params = Object.assign({ cache: this.cache }, data, ...options)
     let { serialized, cache } = params
 
     if (!serialized) {
@@ -655,7 +697,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<JWT>}
    */
   static encrypt (...data) {
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -679,7 +721,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<JWT>}
    */
   static decrypt (...data) {
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
     let { serialized } = params
 
     if (!serialized) {
@@ -715,7 +757,7 @@ class JWT extends JSONDocument {
     let alg
 
     // Get `alg` from elsewhere
-    if (protectedHeader) {
+    if (protectedHeader && protectedHeader.alg) {
       alg = protectedHeader.alg
     } else {
       alg = params.alg
@@ -866,7 +908,7 @@ class JWT extends JSONDocument {
 
       // Ensure all signatures verified
       .then(verified => {
-        verified = verified.reduce((prev, val) => prev ? val : false, true)
+        verified = verified.every(val => val === true)
 
         // Assign verification result
         Object.defineProperty(this, 'verified', {

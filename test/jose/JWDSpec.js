@@ -19,7 +19,7 @@ let expect = chai.expect
 const crypto = require('@trust/webcrypto')
 const { JWD } = require('../../src')
 const JWTSchema = require('../../src/schemas/JWTSchema')
-const { RsaPrivateCryptoKey, RsaPublicCryptoKey } = require('../keys')
+const { RsaPrivateJwk, RsaPublicJwk } = require('../keys')
 
 /**
  * Test data
@@ -32,9 +32,11 @@ const doc = {
     {
       protected: {
         alg: "RS256",
+        kid: "H3tKYTdpSy9Yle51Ap5HbDIhIudmVvsYgrn72_KjBFM",
         typ: "JWS",
+        jku: "...",
       },
-      signature: "hOKzfFHDXWfrOoJEj5LAB6LYgiu4jebRoUbsJFn7sNKgDh3aTMKE2t-oZAV9QxjfEiHzpQIrMSEa-Kl8sytkhSzi7m01zp178VhcIglL7JGLZVPDdpq7cBQ1wuAk5tPrRRfZxaU97bhA9g110BVP4fmQi4PDBhAroIUXizwIrSJ5Vpi74yEpJjHYB4_iZc576Eajqw3cZdLgFCGeDKEJ-Rzir6l7HrNm1SaOGjgMEmSE9KxRBvQcIo5OdjH0nX0mErCjbhJrvvBkYqy5mHfWbtnr_mfE9PRp6NLqVH99IKDeReoXHw6118x_27YsqnrGDQ4wMGzodVaonwRSW8Yanw"
+      signature: "P3gbGTMyQBSeMrZ4q3-MyECdrdehavN_YTQZCh7UpjLJjgI-Ecn7XZG64qtylanlCef64MRqVFrBrd0wLzuP1AXeqnZm--tP7ZREmhPNABHSupoiu6qdGbKQWTicwGZYjLFko7d9pOV8kQBITRB3XQHZ2j8Q_mA-gz3s12oHxJlPtONLwJHzSVyzIppQijL32JMjL7FwiXD_1kzGtVkMy_g9avzvoRvOwSAOCicFhLBWEZIs-pblaoCTp2k11PDAMcfi9s4GHpGTbeuFENI5tBu1jwYyXhQkbEsQJJ5KWTw3YbU0uPFXcw5CmmGOo8Ns_NIc0kXy79tfm7WhUAmh4A"
     }
   ]
 }
@@ -147,7 +149,7 @@ describe('JWD', () => {
       let jwd = new JWD({
         header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
         payload: { iss: null },
-        key: RsaPrivateCryptoKey
+        jwk: RsaPrivateJwk
       })
 
       jwd.encode().should.be.rejected.and.notify(done)
@@ -156,7 +158,8 @@ describe('JWD', () => {
     it('should resolve a stringified JWD', (done) => {
       JWD.encode({
         payload: { iss: 'hello world!' },
-        signatures: [{ protected: { alg: 'RS256', typ: 'JWS' }, cryptoKey: RsaPrivateCryptoKey }],
+        protected: { alg: 'RS256', typ: 'JWS', jku: '...' },
+        jwk: RsaPrivateJwk,
       }).should.eventually.equal(serializedToken).and.notify(done)
     })
   })
@@ -166,14 +169,23 @@ describe('JWD', () => {
    */
   describe('verify', () => {
     it('should reject invalid JWD', (done) => {
-      JWD.verify({ cryptoKey: RsaPublicCryptoKey, serialized: 'invalid' })
+      JWD.verify({ jwk: RsaPublicJwk, serialized: 'invalid' })
         .should.be.rejectedWith('Malformed JWD')
         .and.notify(done)
     })
 
-    it('should resolve a boolean', (done) => {
-      JWD.verify({ cryptoKey: RsaPublicCryptoKey, serialized: serializedToken })
+    it('should resolve a boolean by default', (done) => {
+      JWD.verify({ jwk: RsaPublicJwk, serialized: serializedToken })
         .should.eventually.equal(true).and.notify(done)
+    })
+
+    it('can resolve an instance', (done) => {
+      JWD.verify({ jwk: RsaPublicJwk, serialized: serializedToken, result: 'instance' })
+        .should.eventually.be.an.instanceOf(JWD).and.notify(done)
+    })
+
+    it.skip('can accept a string', (done) => {
+      JWD.verify(serializedToken).should.eventually.equal(true).and.notify(done)
     })
   })
 })

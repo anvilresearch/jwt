@@ -19,16 +19,16 @@ let expect = chai.expect
 const crypto = require('@trust/webcrypto')
 const { JWT } = require('../../src')
 const JWTSchema = require('../../src/schemas/JWTSchema')
-const { RsaPrivateCryptoKey, RsaPublicCryptoKey } = require('../keys')
+const { RsaPrivateJwk, RsaPublicJwk } = require('../keys')
 
 /**
  * Test data
  */
-const compact = 'eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIn0.eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0.FMer-lRR4Q4BVivMc9sl-jF3c-QWEenlH2pcW9oXTsiPRSEzc7lgPEryuXTimoToSKwWFgVpnjXKnmBaTaPVLpuRUMwGUeIUdQu0bQC-XEo-TKlwlqtUgelQcF2viEQwxU04UQaXWBh9ZDTIOutfXcjyhEPiMfCFLxT_aotR0zipmAi825lF1qBmxKrCv4c_9_46ACuaeuET6t0XvcAMDf3fjkEdw_0KPN2wnAlp2AwPP05D8Nwn8NqDAlljdN7bjnO99uJvhNWbvZgBYfhNXkMeDVJcukv0j3Cz6LCgedbXdX0rzJv_4qkO6l-LU9QeK1s0kwHfRUIWoa0TLJ4FtQ'
-const flattened = '{"payload":"eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0","protected":"eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIn0","signature":"FMer-lRR4Q4BVivMc9sl-jF3c-QWEenlH2pcW9oXTsiPRSEzc7lgPEryuXTimoToSKwWFgVpnjXKnmBaTaPVLpuRUMwGUeIUdQu0bQC-XEo-TKlwlqtUgelQcF2viEQwxU04UQaXWBh9ZDTIOutfXcjyhEPiMfCFLxT_aotR0zipmAi825lF1qBmxKrCv4c_9_46ACuaeuET6t0XvcAMDf3fjkEdw_0KPN2wnAlp2AwPP05D8Nwn8NqDAlljdN7bjnO99uJvhNWbvZgBYfhNXkMeDVJcukv0j3Cz6LCgedbXdX0rzJv_4qkO6l-LU9QeK1s0kwHfRUIWoa0TLJ4FtQ"}'
-const json = '{"payload":"eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0","signatures":[{"protected":"eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIn0","signature":"FMer-lRR4Q4BVivMc9sl-jF3c-QWEenlH2pcW9oXTsiPRSEzc7lgPEryuXTimoToSKwWFgVpnjXKnmBaTaPVLpuRUMwGUeIUdQu0bQC-XEo-TKlwlqtUgelQcF2viEQwxU04UQaXWBh9ZDTIOutfXcjyhEPiMfCFLxT_aotR0zipmAi825lF1qBmxKrCv4c_9_46ACuaeuET6t0XvcAMDf3fjkEdw_0KPN2wnAlp2AwPP05D8Nwn8NqDAlljdN7bjnO99uJvhNWbvZgBYfhNXkMeDVJcukv0j3Cz6LCgedbXdX0rzJv_4qkO6l-LU9QeK1s0kwHfRUIWoa0TLJ4FtQ"}]}'
+const compact = 'eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIiwiamt1IjoiLi4uIn0.eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0.Q9hLOSzGefpeN2rZ6NF1unA75Rmz0GMiwLorC5xJEY2keH0rgmO1nNF0wz4H7_8fUPylgKH6YkljRCiq8v9aaHZk4KXliaYHtntpNTKaqyEyJsKfa7b-Lr3Ysr8LAX_PoIVUk-mtD-A_vYE0iAedCDuSMcOWPRrvvZTDcFpolmvDLVkWs_xZTbKgkACGxSdy0c6wLx0u5A8uEGk05asNLMkNCLaKWbCS7L1wsg2at9ADs8hopeVfmQsHe9Z4HiYJe-iQUB-n_84beR0da4j810PxPgM24gOFdqd2jD1r645o9Gh4fNivx3Sexs5B8Gw__ESZYqq0zacZr5yHp4LCoQ'
+const flattened = '{"payload":"eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0","protected":"eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIn0","signature":"Q9hLOSzGefpeN2rZ6NF1unA75Rmz0GMiwLorC5xJEY2keH0rgmO1nNF0wz4H7_8fUPylgKH6YkljRCiq8v9aaHZk4KXliaYHtntpNTKaqyEyJsKfa7b-Lr3Ysr8LAX_PoIVUk-mtD-A_vYE0iAedCDuSMcOWPRrvvZTDcFpolmvDLVkWs_xZTbKgkACGxSdy0c6wLx0u5A8uEGk05asNLMkNCLaKWbCS7L1wsg2at9ADs8hopeVfmQsHe9Z4HiYJe-iQUB-n_84beR0da4j810PxPgM24gOFdqd2jD1r645o9Gh4fNivx3Sexs5B8Gw__ESZYqq0zacZr5yHp4LCoQ"}'
+const json = '{"payload":"eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0","signatures":[{"protected":"eyJhbGciOiJSUzI1NiIsImtpZCI6InI0bmQwbWJ5dDNzIn0","signature":"Q9hLOSzGefpeN2rZ6NF1unA75Rmz0GMiwLorC5xJEY2keH0rgmO1nNF0wz4H7_8fUPylgKH6YkljRCiq8v9aaHZk4KXliaYHtntpNTKaqyEyJsKfa7b-Lr3Ysr8LAX_PoIVUk-mtD-A_vYE0iAedCDuSMcOWPRrvvZTDcFpolmvDLVkWs_xZTbKgkACGxSdy0c6wLx0u5A8uEGk05asNLMkNCLaKWbCS7L1wsg2at9ADs8hopeVfmQsHe9Z4HiYJe-iQUB-n_84beR0da4j810PxPgM24gOFdqd2jD1r645o9Gh4fNivx3Sexs5B8Gw__ESZYqq0zacZr5yHp4LCoQ"}]}'
 
-const signature = 'FMer-lRR4Q4BVivMc9sl-jF3c-QWEenlH2pcW9oXTsiPRSEzc7lgPEryuXTimoToSKwWFgVpnjXKnmBaTaPVLpuRUMwGUeIUdQu0bQC-XEo-TKlwlqtUgelQcF2viEQwxU04UQaXWBh9ZDTIOutfXcjyhEPiMfCFLxT_aotR0zipmAi825lF1qBmxKrCv4c_9_46ACuaeuET6t0XvcAMDf3fjkEdw_0KPN2wnAlp2AwPP05D8Nwn8NqDAlljdN7bjnO99uJvhNWbvZgBYfhNXkMeDVJcukv0j3Cz6LCgedbXdX0rzJv_4qkO6l-LU9QeK1s0kwHfRUIWoa0TLJ4FtQ'
+const signature = 'Q9hLOSzGefpeN2rZ6NF1unA75Rmz0GMiwLorC5xJEY2keH0rgmO1nNF0wz4H7_8fUPylgKH6YkljRCiq8v9aaHZk4KXliaYHtntpNTKaqyEyJsKfa7b-Lr3Ysr8LAX_PoIVUk-mtD-A_vYE0iAedCDuSMcOWPRrvvZTDcFpolmvDLVkWs_xZTbKgkACGxSdy0c6wLx0u5A8uEGk05asNLMkNCLaKWbCS7L1wsg2at9ADs8hopeVfmQsHe9Z4HiYJe-iQUB-n_84beR0da4j810PxPgM24gOFdqd2jD1r645o9Gh4fNivx3Sexs5B8Gw__ESZYqq0zacZr5yHp4LCoQ'
 
 /**
  * Test data for JWE
@@ -300,7 +300,7 @@ describe('JWT', () => {
 
       it('should set JWT protected header', () => {
         JWT.decode(compact).signatures[0].should.have.property('protected')
-          .that.deep.equals({ alg: 'RS256', kid: 'r4nd0mbyt3s' })
+          .that.deep.equals({ alg: 'RS256', jku: '...', kid: 'r4nd0mbyt3s' })
       })
 
       it('should set JWT payload', () => {
@@ -439,22 +439,24 @@ describe('JWT', () => {
 
   describe('static sign', () => {
     it('should reject invalid parameters', (done) => {
-      JWT.sign(RsaPrivateCryptoKey, {
-        header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+      JWT.sign({
+        jwk: RsaPrivateJwk,
+        protected: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
         payload: { iss: null }
       }).should.be.rejected.and.notify(done)
     })
 
     it('should reject without payload', (done) => {
-      JWT.sign(RsaPrivateCryptoKey, {
-        header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+      JWT.sign({
+        jwk: RsaPrivateJwk,
+        protected: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
       }).should.be.rejected.and.notify(done)
     })
 
     it('should resolve a JWS', (done) => {
       JWT.sign({
-        cryptoKey: RsaPrivateCryptoKey,
-        header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+        jwk: RsaPrivateJwk,
+        protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
         payload: { iss: 'https://forge.anvil.io' },
         serialization: 'compact'
       }).should.eventually.equal(compact).and.notify(done)
@@ -471,7 +473,8 @@ describe('JWT', () => {
 
   describe('static encrypt', () => {
     it('should reject invalid parameters', (done) => {
-      JWT.encrypt(RsaPublicCryptoKey, {
+      JWT.encrypt({
+        jwk: RsaPublicJwk,
         header: { enc: 'A128GCM' },
         plaintext: null
       }).should.be.rejected.and.notify(done)
@@ -495,7 +498,7 @@ describe('JWT', () => {
     })
 
     it('should reject invalid JWT', (done) => {
-      JWT.decrypt({ cryptoKey: RsaPublicCryptoKey, serialized: 'invalid' })
+      JWT.decrypt({ jwk: RsaPublicJwk, serialized: 'invalid' })
         .should.be.rejectedWith('Malformed JWT')
         .and.notify(done)
     })
@@ -523,54 +526,6 @@ describe('JWT', () => {
   })
 
   /**
-   * resolveKeys
-   */
-  describe.skip('resolveKeys', () => {
-    let jwks, token
-
-    beforeEach(() => {
-      jwks = {
-        keys: [
-          { kid: '123', cryptoKey: {} },
-          { use: 'sig', cryptoKey: {} }
-        ]
-      }
-
-      token = new JWT({
-        header: {
-          alg: 'RS256'
-        }
-      })
-    })
-
-    it('should throw with invalid argument', () => {
-      expect(() => {
-        token.resolveKeys(false)
-      }).to.throw('Invalid JWK argument')
-    })
-
-    it('should return true with match', () => {
-      token.resolveKeys(jwks).should.equal(true)
-    })
-
-    it('should return false with no match', () => {
-      token.header.kid = '234'
-      token.resolveKeys(jwks).should.equal(false)
-    })
-
-    it('should match JWK by `kid`', () => {
-      token.header.kid = '123'
-      token.resolveKeys(jwks)
-      token.key.should.equal(jwks.keys[0].cryptoKey)
-    })
-
-    it('should match JWK by `use`', () => {
-      token.resolveKeys(jwks)
-      token.key.should.equal(jwks.keys[1].cryptoKey)
-    })
-  })
-
-  /**
    * encode
    */
   describe('encode', () => {
@@ -579,8 +534,9 @@ describe('JWT', () => {
       class ExtendedJWT extends JWT {}
 
       it('should reject invalid JWS', (done) => {
-        ExtendedJWT.encode(RsaPrivateCryptoKey, {
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+        ExtendedJWT.encode({
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: null }
         }).should.be.rejected.and.notify(done)
       })
@@ -595,8 +551,8 @@ describe('JWT', () => {
 
       it('should resolve a JWS Compact Serialization', (done) => {
         ExtendedJWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io' },
           serialization: 'compact'
         }).should.eventually.equal(compact).and.notify(done)
@@ -612,8 +568,8 @@ describe('JWT', () => {
 
       it('should filter JWS unspecified properties', () => {
         return ExtendedJWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io', foo: 'bar' },
           serialization: 'general'
         }).should.eventually.contain('eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIn0')
@@ -630,8 +586,8 @@ describe('JWT', () => {
 
       it('should not filter unspecified properties when filter is false', () => {
         return JWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io', foo: 'bar' },
           serialization: 'general',
           filter: false
@@ -652,8 +608,8 @@ describe('JWT', () => {
 
     describe('with Base JWT', () => {
       it('should reject invalid JWS', (done) => {
-        JWT.encode(RsaPrivateCryptoKey, {
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+        JWT.encode(RsaPrivateJwk, {
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: null }
         }).should.be.rejected.and.notify(done)
       })
@@ -667,8 +623,8 @@ describe('JWT', () => {
 
       it('should resolve a JWS Compact Serialization', (done) => {
         JWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io' },
           serialization: 'compact'
         }).should.eventually.equal(compact).and.notify(done)
@@ -684,8 +640,8 @@ describe('JWT', () => {
 
       it('should not filter JWS unspecified properties', () => {
         return JWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io', foo: 'bar' },
           serialization: 'general'
         }).should.eventually.contain('eyJpc3MiOiJodHRwczovL2ZvcmdlLmFudmlsLmlvIiwiZm9vIjoiYmFyIn0')
@@ -702,8 +658,8 @@ describe('JWT', () => {
 
       it('should filter JWS unspecified properties when filter is true', () => {
         return JWT.encode({
-          cryptoKey: RsaPrivateCryptoKey,
-          header: { alg: 'RS256', kid: 'r4nd0mbyt3s' },
+          jwk: RsaPrivateJwk,
+          protected: { alg: 'RS256', kid: 'r4nd0mbyt3s', jku: '...' },
           payload: { iss: 'https://forge.anvil.io', foo: 'bar' },
           serialization: 'general',
           filter: true
@@ -727,18 +683,18 @@ describe('JWT', () => {
    */
   describe('verify', () => {
     it('should reject invalid JWT', (done) => {
-      JWT.verify({ cryptoKey: RsaPublicCryptoKey, serialized: 'invalid' })
+      JWT.verify({ jwk: RsaPublicJwk, serialized: 'invalid' })
         .should.be.rejectedWith('Malformed JWT')
         .and.notify(done)
     })
 
     it('should resolve a boolean', (done) => {
-      JWT.verify({ cryptoKey: RsaPublicCryptoKey, serialized: compact })
+      JWT.verify({ jwk: RsaPublicJwk, serialized: compact })
         .should.eventually.equal(true).and.notify(done)
     })
 
     it('can resolve an instance', (done) => {
-      JWT.verify({ cryptoKey: RsaPublicCryptoKey, serialized: compact, result: 'instance' })
+      JWT.verify({ jwk: RsaPublicJwk, serialized: compact, result: 'instance' })
         .should.eventually.be.instanceof(JWT).and.notify(done)
     })
   })

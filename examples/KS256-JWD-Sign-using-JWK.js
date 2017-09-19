@@ -1,6 +1,5 @@
 const crypto = require('@trust/webcrypto')
 const { JWD } = require('../src')
-const JWKSetCache = require('../src/JWKSetCache')
 const base64url = require('base64url')
 const keyto = require('@trust/keyto')
 const { JWK } = require('@trust/jwk')
@@ -12,7 +11,6 @@ const privateJwk = key.toJwk('private')
 privateJwk.key_ops = ['sign']
 const publicJwk = key.toJwk('public')
 publicJwk.key_ops = ['verify']
-const cache = new JWKSetCache()
 
 nock('http://example.com')
   .get('/jwks')
@@ -30,12 +28,12 @@ nock('http://example.com')
 let privateKey, publicKey
 
 let payload = { iss: 'http://example.com', exp: 123456789, iat: 123456789 }
-let header = { typ: 'JWS', alg: 'KS256', jku: 'http://example.com/jwks' }
+let header = { jku: 'http://example.com/jwks' }
 
 
 Promise.all([
-  JWK.importKey(privateJwk, { alg: header.alg }),
-  JWK.importKey(publicJwk, { alg: header.alg }),
+  JWK.importKey(privateJwk, { alg: 'KS256' }),
+  JWK.importKey(publicJwk, { alg: 'KS256' }),
 ])
 
   // use key with JWA to create a signature
@@ -44,21 +42,18 @@ Promise.all([
     privateKey = prv
     publicKey = pub
 
-    let serialized = JSON.stringify({ payload: base64url(JSON.stringify(payload)), protected: base64url(JSON.stringify(header)), signature: 'signaturesignaturesignature'})
-
-    return JWD.encode({ protected: header, jwk: privateKey, payload, cache }, { serialization: 'document' })
+    return JWD.encode({ protected: header, jwk: privateKey, payload, serialization: 'document' })
   })
 
   // verify the signature
   .then(token => {
-    return JWD.verify({ serialized: token, result: 'instance', cache })
+    return JWD.verify(token, { result: 'instance' })
   })
 
   // look at the output
   .then(token => {
     console.error(`TOKEN FINAL VERIFICATION RESULT:`, token.verified)
-    console.error(`TOKEN`)
-    console.log(JSON.stringify(token, null, 2))
+    console.error(`TOKEN`, JSON.stringify(token, null, 2))
   })
 
   // look at the out

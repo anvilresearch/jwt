@@ -27,7 +27,7 @@ nock('http://example.com')
 let privateKey, publicKey
 
 let payload = { iss: 'http://example.com', exp: 123456789, iat: 123456789 }
-let header = { typ: 'JWS', alg: 'KS256', jku: 'http://example.com/jwks' }
+let header = { jku: 'http://example.com/jwks' }
 
 
 Promise.all([
@@ -41,14 +41,12 @@ Promise.all([
     privateKey = prv
     publicKey = pub
 
-    let serialized = JSON.stringify({ payload: base64url(JSON.stringify(payload)), protected: base64url(JSON.stringify(header)), signature: 'signaturesignaturesignature'})
-
-    return JWD.encode({ protected: header, cryptoKey: privateKey, alg: 'KS256', payload, cache }, { serialization: 'document' })
+    return JWD.encode({ protected: header, cryptoKey: privateKey, payload, alg: 'KS256' }, { serialization: 'document' })
   })
 
   // verify the signature
   .then(token => {
-    return JWD.verify({ serialized: token, result: 'instance', cache })
+    return JWD.verify(token, { result: 'instance' })
   })
 
   // look at the output

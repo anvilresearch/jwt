@@ -40,12 +40,13 @@
   "homepage": "https://github.com/anvilresearch/jwt#README",
   "dependencies": {
     "@trust/json-document": "^0.1.4",
-    "@trust/jwa": "^0.4.4",
-    "@trust/jwk": "^0.2.0",
-    "@trust/webcrypto": "^0.4.0",
+    "@trust/jwa": "^0.4.6",
+    "@trust/jwk": "^0.3.1",
+    "@trust/webcrypto": "^0.5.0",
     "base64url": "^2.0.0"
   },
   "devDependencies": {
+    "@trust/keyto": "^0.3.1",
     "chai": "^4.1.1",
     "chai-as-promised": "^7.1.1",
     "codecov": "^2.3.0",
@@ -54,6 +55,8 @@
     "mocha": "^3.5.0",
     "nock": "^9.0.14",
     "nyc": "^11.1.0",
+    "pouchdb": "^6.3.4",
+    "pouchdb-adapter-memory": "^6.3.4",
     "sinon": "^2.1.0",
     "sinon-chai": "^2.12.0"
   }

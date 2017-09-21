@@ -4,9 +4,12 @@
  * Dependencies
  */
 const base64url = require('base64url')
-const {JSONDocument} = require('@trust/json-document')
+const { JSONDocument } = require('@trust/json-document')
 const JWTSchema = require('../schemas/JWTSchema')
+const JOSESignature = require('../JOSESignature')
+const JWKSetCache = require('../JWKSetCache')
 const { JWA } = require('@trust/jwa')
+const { JWK } = require('@trust/jwk')
 const DataError = require('../errors/DataError')
 const KeyManagement = require('../KeyManagement')
 
@@ -56,6 +59,42 @@ class JWT extends JSONDocument {
    */
   static get schema () {
     return JWTSchema
+  }
+
+  /**
+   * cache
+   */
+  static get cache () {
+    let { keyCache: cache } = this
+
+    if (!cache) {
+      cache = new JWKSetCache()
+      Object.defineProperty(this, 'keyCache', {
+        value: cache,
+        configurable: true,
+        enumerable: false
+      })
+    }
+
+    return cache
+  }
+
+  /**
+   * setCache
+   *
+   * @description
+   * Create and assign a new JWKSetCache to use across all JWT instances.
+   *
+   * @param {Object} [options = {}]
+   */
+  static setCache (options = {}) {
+    let cache = new JWKSetCache(options)
+
+    Object.defineProperty(this, 'keyCache', {
+      value: cache,
+      configurable: true,
+      enumerable: false
+    })
   }
 
   /**
@@ -564,8 +603,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<SerializedToken>}
    */
   static sign (...data) {
-    // Shallow merge data
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -575,7 +613,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.sign(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.sign(params))
   }
 
   /**
@@ -589,8 +628,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<SerializedToken>}
    */
   static encode (...data) {
-    // Shallow merge data
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -600,7 +638,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.encode(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.encode(params))
   }
 
 
@@ -610,26 +649,42 @@ class JWT extends JSONDocument {
    * @description
    * Decode and verify a JSON Web Token
    *
-   * @param {...Object} data
-   * @returns {Promise<JWT>}
+   * @param {(Object|String)} data
+   * @param {...Object} options
+   * @returns {Promise<(JWT|Boolean)>}
    */
-  static verify (...data) {
-    let params = Object.assign({}, ...data)
-    let { serialized } = params
+  static verify (data, ...options) {
+    if (typeof data === 'string') {
+      data = { serialized: data }
+    } else if (typeof data !== 'object') {
+      throw new Error('JWT input must be string or object')
+    }
+
+    let params = Object.assign({ cache: this.cache }, data, ...options)
+    let { serialized, cache } = params
 
     if (!serialized) {
       throw new Error('JWT input required')
+    }
+
+    if (!cache) {
+      throw new Error('cache required')
     }
 
     // Try decode
     let instance
     try {
       instance = this.from(serialized)
+      instance.signatures = instance.signatures.map(signature => {
+        let data = Object.assign({}, signature, { cache })
+        return new JOSESignature(data)
+      })
     } catch (e) {
       return Promise.reject(e)
     }
 
-    return instance.verify(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.verify(params))
   }
 
   /**
@@ -642,7 +697,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<JWT>}
    */
   static encrypt (...data) {
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
 
     // Try decode
     let instance
@@ -652,7 +707,8 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.encrypt(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.encrypt(params))
   }
 
   /**
@@ -665,7 +721,7 @@ class JWT extends JSONDocument {
    * @returns {Promise<JWT>}
    */
   static decrypt (...data) {
-    let params = Object.assign({}, ...data)
+    let params = Object.assign({ cache: this.cache }, ...data)
     let { serialized } = params
 
     if (!serialized) {
@@ -680,7 +736,62 @@ class JWT extends JSONDocument {
       return Promise.reject(e)
     }
 
-    return instance.decrypt(params)
+    return this.normalizeKeyParams(params)
+      .then(params => instance.decrypt(params))
+  }
+
+  /**
+   * normalizeKeyParams
+   *
+   * @description
+   * Normalize key material. Accepts a single input only.
+   *
+   * @param  {Object} params - Operation params (as per sign, verify, etc.)
+   * @param  {(Object|String)} params.jwk
+   * @param  {String} params.pem
+   * @param  {Object} params.cryptoKey
+   * @return {Promise<Object>} - params object with normalized JWK instance
+   */
+  static normalizeKeyParams (params) {
+    let { jwk, pem, cryptoKey, protected: protectedHeader } = params
+    let alg
+
+    // Get `alg` from elsewhere
+    if (protectedHeader && protectedHeader.alg) {
+      alg = protectedHeader.alg
+    } else {
+      alg = params.alg
+    }
+
+    // Handle JWK
+    if (jwk) {
+
+      // Handle instance
+      if (jwk instanceof JWK) {
+        return Promise.resolve(params)
+      }
+
+      // Handle JWK Object or JSON String
+      return JWK.importKey(jwk, { alg }).then(instance => {
+        params.jwk = instance
+        return params
+      })
+    }
+
+    // Handle PEM
+    if (pem) {
+      // TODO
+    }
+
+    // Handle CryptoKey
+    if (cryptoKey) {
+      return JWK.fromCryptoKey(cryptoKey, { alg }).then(instance => {
+        params.jwk = instance
+        return params
+      })
+    }
+
+    return Promise.resolve(params)
   }
 
   /**
@@ -696,53 +807,6 @@ class JWT extends JSONDocument {
     return this.type === 'JWE' || this.ciphertext !== undefined ||
           (this.header !== undefined && this.header.enc !== undefined)
   }
-
-  /**
-   * resolveKeys
-   *
-   * @todo  This needs to be updated for use with the new API
-   */
-  // resolveKeys (jwks) {
-  //   let kid = this.header.kid
-
-  //   let keys, match
-
-  //   // treat an array as the "keys" property of a JWK Set
-  //   if (Array.isArray(jwks)) {
-  //     keys = jwks
-  //   }
-
-  //   // presence of keys indicates object is a JWK Set
-  //   if (jwks.keys) {
-  //     keys = jwks.keys
-  //   }
-
-  //   // wrap a plain object they is not a JWK Set in Array
-  //   if (!jwks.keys && typeof jwks === 'object') {
-  //     keys = [jwks]
-  //   }
-
-  //   // ensure there are keys to search
-  //   if (!keys) {
-  //     throw new DataError('Invalid JWK argument')
-  //   }
-
-  //   // match by "kid" or "use" header
-  //   if (kid) {
-  //     match = keys.find(jwk => jwk.kid === kid)
-  //   } else {
-  //     match = keys.find(jwk => jwk.use === 'sig')
-  //   }
-
-  //   // assign matching key to JWT and return a boolean
-  //   if (match) {
-  //     console.log(match)
-  //     this.key = match.cryptoKey
-  //     return true
-  //   } else {
-  //     return false
-  //   }
-  // }
 
   /**
    * encode
@@ -769,27 +833,15 @@ class JWT extends JSONDocument {
    * @description
    * Sign a JWT instance
    *
-   * @todo import different types of key
-   *
    * @param {...Object} data
    * @returns {Promise<SerializedToken>}
    */
   sign (...data) {
     let params = Object.assign({}, ...data)
-
     let { payload } = this
+    let { serialization, validate = true, result } = params
 
-    let {
-      protected: protectedHeader,
-      header: unprotectedHeader,
-      signature,
-      signatures,
-      serialization,
-      cryptoKey,
-      validate = true,
-      result
-    } = params
-
+    // Schema validation
     if (validate) {
       let validation = this.validate()
 
@@ -807,69 +859,17 @@ class JWT extends JSONDocument {
       })
     }
 
-    // Normalize new flat signature
-    if (cryptoKey && !signature && (unprotectedHeader || protectedHeader)) {
-      let descriptor = {}
+    // Create signature
+    return JOSESignature.sign(params).then(signature => {
 
-      if (!protectedHeader && unprotectedHeader) {
-        descriptor.protected = unprotectedHeader
+      // Assign signature
+      if (Array.isArray(this.signatures)) {
+        this.signatures.push(signature)
       } else {
-        descriptor.protected = protectedHeader
-        descriptor.header = unprotectedHeader
+        this.signatures = [signature]
       }
 
-      descriptor.cryptoKey = cryptoKey
-
-      // Add to signatures array
-      if (signatures && Array.isArray(signatures)) {
-        signatures.push(descriptor)
-      } else {
-        signatures = [descriptor]
-      }
-    }
-
-    // Create signatures
-    let promises = []
-    if (signatures && Array.isArray(signatures)) {
-      // Ignore ambiguous/invalid descriptors
-      promises = signatures.filter(descriptor => {
-        return descriptor.cryptoKey && !descriptor.signature
-
-      // assemble and sign
-      }).map(descriptor => {
-        let {
-          protected: protectedHeader,
-          header: unprotectedHeader,
-          signature,
-          cryptoKey
-        } = descriptor
-        let { alg } = protectedHeader
-
-        // Encode signature content
-        let encodedHeader = base64url(JSON.stringify(protectedHeader))
-        let encodedPayload = base64url(JSON.stringify(payload))
-        let data = `${encodedHeader}.${encodedPayload}`
-
-        return JWA.sign(alg, cryptoKey, data).then(signature => {
-          return {
-            protected: protectedHeader,
-            header: unprotectedHeader,
-            signature
-          }
-        })
-      })
-    }
-
-    // Await signatures
-    return Promise.all(promises).then(signatures => {
-      if (signatures.length > 0) {
-        if (this.signatures && Array.isArray(this.signatures)) {
-          this.signatures = this.signatures.concat(signatures)
-        } else {
-          this.signatures = signatures
-        }
-      }
-
+      // Resolve requested result
       if (!result || result === 'string') {
         return this.serialize()
       } else if (result === 'object' || result === 'instance') {
@@ -891,8 +891,8 @@ class JWT extends JSONDocument {
    */
   verify (...data) {
     let params = Object.assign({}, ...data)
-    let { signatures, payload, serialization } = this
-    let { validate, result, cryptoKey, cryptoKeys } = params
+    let { signatures, payload } = this
+    let { validate, result, jwk } = params
 
     // Validate instance
     if (validate) {
@@ -903,78 +903,27 @@ class JWT extends JSONDocument {
       }
     }
 
-    // Encode payload
-    let encodedPayload = base64url(JSON.stringify(payload))
+    // Verify
+    return Promise.all(signatures.map(signature => signature.verify(payload, jwk)))
 
-    // Verify all signatures with a key present
-    let promises = signatures.map((descriptor, index) => {
+      // Ensure all signatures verified
+      .then(verified => {
+        verified = verified.every(val => val === true)
 
-      let key
-      // Get manually mapped key
-      if (descriptor.cryptoKey) {
-        key = descriptor.cryptoKey
-
-      // Get corresponding key
-      } else if (cryptoKeys
-        && Array.isArray(cryptoKeys)
-        && index < cryptoKeys.length
-        && cryptoKeys[index]) {
-
-        key = cryptoKeys[index]
-
-      // Attempt to use the single key
-      } else if (cryptoKey) {
-        key = cryptoKey
-
-      // No key to verify signature; ignore
-      } else {
-        return Promise.resolve(true)
-      }
-
-      let {
-        protected: protectedHeader,
-        header: unprotectedHeader,
-        signature
-      } = descriptor
-
-      // no signature to verify
-      if (!signature) {
-        return Promise.reject(new DataError('Missing signature(s)'))
-      }
-
-      let { alg } = protectedHeader
-
-      // Encode header and assemble signature verification data
-      let encodedHeader = base64url(JSON.stringify(protectedHeader))
-      let data = `${encodedHeader}.${encodedPayload}`
-
-      // Verify signature and store result on the descriptor
-      return JWA.verify(alg, key, signature, data).then(verified => {
-        Object.defineProperty(signatures[index], 'verified', {
+        // Assign verification result
+        Object.defineProperty(this, 'verified', {
           value: verified,
           enumerable: false,
           configurable: true
         })
-        return verified
+
+        // Resolve requested result
+        if (!result || result === 'boolean') {
+          return verified
+        } else if (result === 'object' || result === 'instance') {
+          return this
+        }
       })
-    })
-
-    // Await verification results
-    return Promise.all(promises).then(verified => {
-      verified = verified.reduce((prev, val) => prev ? val : false, true)
-
-      Object.defineProperty(this, 'verified', {
-        value: verified,
-        enumerable: false,
-        configurable: true
-      })
-
-      if (!result || result === 'boolean') {
-        return verified
-      } else if (result === 'object' || result === 'instance') {
-        return this
-      }
-    })
   }
 
   /**

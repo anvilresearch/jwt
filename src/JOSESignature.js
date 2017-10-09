@@ -87,8 +87,9 @@ class JOSESignature {
     let {
       payload,
       header: unprotectedHeader,
-      protected: protectedHeaderParams,
+      protected: protectedHeaderParams = {},
       cache,
+      jwc,
       jwk
     } = options
 
@@ -102,6 +103,10 @@ class JOSESignature {
       return Promise.reject(
         new Error('Missing JWKSetCache for JOSE Signature')
       )
+    }
+
+    if (jwc) {
+      protectedHeaderParams = { ...protectedHeaderParams, jwc }
     }
 
     if (!jwk) {
@@ -180,7 +185,12 @@ class JOSESignature {
     if (Array.isArray(jwc)) {}
 
     // certificate
-    if (jwc) {}
+    if (jwc) {
+      const JWT = require('./jose/JWT')
+
+      return JWT.verify(jwc, { result: 'instance' })
+        .then(({ payload: publicKey }) => this.verify(payload, publicKey))
+    }
 
     // remote jwk
     if (kid && jku) {
